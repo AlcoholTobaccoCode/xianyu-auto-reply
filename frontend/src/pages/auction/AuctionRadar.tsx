@@ -284,7 +284,7 @@ export function AuctionRadar() {
         <div>
           <h1 className="page-title">拍卖雷达</h1>
           <p className="page-description">
-            导入闲鱼拍卖链接，或按关键词自主嗅探；集中查看当前价、卖家和结束时间。出价仍在闲鱼 App 人工完成。
+            导入闲鱼拍卖链接，或按关键词自主嗅探；仅收录拍卖商品，普通商品会自动过滤。出价仍在闲鱼 App 人工完成。
           </p>
         </div>
         <button className="btn-ios-secondary" onClick={() => void loadData()} disabled={loading}>
@@ -314,7 +314,7 @@ export function AuctionRadar() {
             </button>
           </div>
           <p className="text-xs text-slate-400 dark:text-slate-500">
-            公开详情能拿到标题、当前价、起拍价、卖家、成色、图片；出价次数/保证金/加价幅度需到闲鱼 App 查看。
+            仅支持拍卖商品，普通商品会被识别并拒绝；公开详情能拿到标题、当前价、起拍价、卖家、成色、图片。
           </p>
         </div>
       </div>
@@ -324,7 +324,7 @@ export function AuctionRadar() {
           <div>
             <h2 className="vben-card-title">自主嗅探</h2>
             <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">
-              用已登录的闲鱼账号按关键词搜索拍卖，自动入库；建议使用“拍卖/起拍”类关键词。
+              用已登录的闲鱼账号按关键词搜索，只入库拍卖商品（isAuction=true），普通商品自动跳过。
             </p>
           </div>
           <button
