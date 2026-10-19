@@ -1,6 +1,9 @@
 # Docker Compose 配置文件
 # 闲鱼自动回复系统 - 本地源码构建
 # 用法: docker compose up -d --build
+#
+# 项目组固定为 xianyu-auto-reply，避免因目录名/启动方式不同产生多个 Compose 项目。
+name: xianyu-auto-reply
 
 services:
   # ====== 基础设施 ======
