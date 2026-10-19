@@ -20,6 +20,7 @@ import httpx
 from loguru import logger
 
 from common.services.ai_provider_service import build_openai_url, extract_response_error
+from common.utils.http_ssl import build_httpx_verify
 
 # 默认请求超时（秒）：文案生成通常在 10~60 秒之间
 DEFAULT_TEXT_TIMEOUT = 90.0
@@ -263,7 +264,7 @@ async def chat_completion(
     logger.info(f"【AI铺货】调用文案接口 model={model} api_key长度={len(api_key or '')}")
 
     owns_client = client is None
-    http_client = client or httpx.AsyncClient(timeout=timeout)
+    http_client = client or httpx.AsyncClient(timeout=timeout, verify=build_httpx_verify())
     try:
         last_error: Optional[AiCallError] = None
         for label, payload_messages, disable_thinking, allow_retry in attempts:

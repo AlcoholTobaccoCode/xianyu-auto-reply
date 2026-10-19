@@ -38,6 +38,7 @@ from common.services.ai_provider_service import (
     normalize_openai_base_url,
     read_ai_enabled,
 )
+from common.utils.http_ssl import build_httpx_verify
 
 
 class AIReplyEngine:
@@ -463,12 +464,17 @@ class AIReplyEngine:
         temperature: float = 0.5,
     ) -> str:
         """调用OpenAI兼容API"""
+        http_client = httpx.AsyncClient(
+            timeout=httpx.Timeout(connect=30.0, read=600.0, write=30.0, pool=600.0),
+            verify=build_httpx_verify(),
+        )
         try:
             from openai import AsyncOpenAI
             
             client = AsyncOpenAI(
                 api_key=settings["api_key"],
                 base_url=normalize_openai_base_url(settings["base_url"]),
+                http_client=http_client,
             )
             
             request_messages = self._build_openai_messages(messages)
@@ -523,6 +529,8 @@ class AIReplyEngine:
         except Exception as e:
             logger.error(f"OpenAI API调用失败: {e}")
             raise
+        finally:
+            await http_client.aclose()
     
     async def _call_dashscope_api(
         self,
@@ -566,7 +574,7 @@ class AIReplyEngine:
                 "Content-Type": "application/json",
             }
             
-            async with httpx.AsyncClient(timeout=30) as client:
+            async with httpx.AsyncClient(timeout=30, verify=build_httpx_verify()) as client:
                 response = await client.post(url, headers=headers, json=data)
                 response.raise_for_status()
                 result = response.json()
@@ -632,7 +640,7 @@ class AIReplyEngine:
             
             headers = {"Content-Type": "application/json"}
             
-            async with httpx.AsyncClient(timeout=30) as client:
+            async with httpx.AsyncClient(timeout=30, verify=build_httpx_verify()) as client:
                 response = await client.post(url, headers=headers, params={"key": api_key}, json=payload)
                 response.raise_for_status()
                 result = response.json()
@@ -687,7 +695,7 @@ class AIReplyEngine:
                 "Content-Type": "application/json",
             }
             
-            async with httpx.AsyncClient(timeout=30) as client:
+            async with httpx.AsyncClient(timeout=30, verify=build_httpx_verify()) as client:
                 response = await client.post(url, headers=headers, json=payload)
                 response.raise_for_status()
                 result = response.json()

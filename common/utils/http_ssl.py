@@ -10,9 +10,11 @@ httpx 默认使用 certifi 证书包，无法识别 macOS 系统钥匙串或企�
 from __future__ import annotations
 
 import ssl
+from functools import lru_cache
 from typing import Any
 
 
+@lru_cache(maxsize=1)
 def build_httpx_verify() -> Any:
     """返回 httpx 可用的 verify 参数。
 

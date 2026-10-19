@@ -179,7 +179,7 @@ docker builder prune
 
 ## 10. 常见问题
 
-### 扫码登录提示“连接错误，请检查网络或代理设置”
+### 扫码登录 / AI 接口提示 SSL 证书错误
 
 先看 `backend-web` 日志里有没有：
 
@@ -189,7 +189,7 @@ CERTIFICATE_VERIFY_FAILED: self-signed certificate in certificate chain
 
 这是 httpx 默认使用 certifi、不信任本机代理/安全软件注入的自签名 CA 导致的，不是闲鱼账号问题。
 
-项目已通过 `common/utils/http_ssl.py` 使用 `truststore` 读取系统证书链，并在扫码登录的 httpx 客户端上启用。若换机器后仍报错：
+项目已通过 `common/utils/http_ssl.py` 使用 `truststore` 读取系统证书链，并在扫码登录的 httpx 客户端上启用。AI 模型列表、AI 连接测试、AI 铺货、AI 回复（OpenAI SDK / DashScope / Gemini / Anthropic）也已统一使用该 helper。若换机器后仍报错：
 
 1. 确认 `.venv` 里已安装 `truststore`（`pip show truststore`）。
 2. 确认本地代理/安全软件的 CA 已加入系统钥匙串并被信任。

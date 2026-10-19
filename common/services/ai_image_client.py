@@ -26,6 +26,7 @@ from loguru import logger
 
 from common.services.ai_provider_service import build_openai_url
 from common.services.ai_text_client import AiCallError, request_json_with_retries
+from common.utils.http_ssl import build_httpx_verify
 from common.utils.local_image_upload import DEFAULT_MAX_SIZE, save_image_bytes
 
 # 默认请求超时（秒）：图片生成普遍比文案慢
@@ -231,7 +232,7 @@ async def generate_images(
     )
 
     owns_client = client is None
-    http_client = client or httpx.AsyncClient(timeout=timeout)
+    http_client = client or httpx.AsyncClient(timeout=timeout, verify=build_httpx_verify())
     saved: list[SavedImage] = []
     try:
         data = await request_json_with_retries(

@@ -13,6 +13,8 @@ from typing import Any
 import httpx
 from loguru import logger
 
+from common.utils.http_ssl import build_httpx_verify
+
 
 DEFAULT_AI_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
 DEFAULT_AI_PROVIDER_TYPE = "openai_compatible"
@@ -272,7 +274,7 @@ async def fetch_ai_model_list(provider_type: Any, base_url: Any, api_key: Any) -
     if provider == "dashscope_app":
         raise ValueError("DashScope应用API不支持自动获取模型列表，请手动填写模型名称")
 
-    async with httpx.AsyncClient(timeout=30.0) as client:
+    async with httpx.AsyncClient(timeout=30.0, verify=build_httpx_verify()) as client:
         if provider == "anthropic":
             url = build_anthropic_url(settings["base_url"], "/models")
             response = await client.get(
@@ -347,7 +349,7 @@ async def test_ai_connection(
         {"role": "user", "content": "你好，请回复'测试成功'"},
     ]
 
-    async with httpx.AsyncClient(timeout=30.0) as client:
+    async with httpx.AsyncClient(timeout=30.0, verify=build_httpx_verify()) as client:
         if provider == "anthropic":
             url = build_anthropic_url(settings["base_url"], "/messages")
             system_content = ""

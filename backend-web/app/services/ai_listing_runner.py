@@ -35,6 +35,7 @@ from common.services.ai_image_client import (
     generate_images,
 )
 from common.services.ai_text_client import DEFAULT_TEXT_TIMEOUT
+from common.utils.http_ssl import build_httpx_verify
 from app.services.xianyu_item_snapshot import as_bool
 
 # 图片生成的并发度（单任务内）与全局并发上限（跨任务）
@@ -274,7 +275,7 @@ async def _execute_task(
     image_enabled = _resolve_image_enabled(config, params)
     timeout = max(DEFAULT_TEXT_TIMEOUT, DEFAULT_IMAGE_TIMEOUT)
 
-    async with httpx.AsyncClient(timeout=timeout) as client:
+    async with httpx.AsyncClient(timeout=timeout, verify=build_httpx_verify()) as client:
         seq = 1
         while seq <= total:
             if await task_service.is_canceled(task_id):
