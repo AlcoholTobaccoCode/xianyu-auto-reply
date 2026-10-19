@@ -45,6 +45,7 @@
 - [x] POC 脚本 `scripts/poc_xianyu_auction.py`
 - [x] 三条样例链接验证通过（当前价 21 / 7 / 14）
 - [x] 一键关键词嗅探：用已登录账号搜索，识别 `isAuction`，自动入库进行中拍卖
+- [x] IM 连接修复：缺少内置 Chromium 时 macOS/Windows 回退系统 Chrome，过滑块后 IM 已验证连接
 - [x] 本地端口与资源记录：`docs/LOCAL_DEV.md`
 
 ## P0 规则 + 预警（下一步优先）
@@ -121,7 +122,7 @@
 ### 需要你决定
 
 - [ ] 先做 **P0 规则 + 预警**，还是先做 **P1 登录态搜索**？
-- [ ] 是否现在安装 Playwright/Patchright 当前版本 Chromium（约 500MB，扫码登录/消息/验证码需要）
+- [ ] 是否安装 Playwright/Patchright 内置 Chromium（已支持系统 Chrome 回退；安装可降低环境差异）
 - [ ] 是否允许清理 Docker 中其它项目的 unused images（当前约 2.2GB reclaimable，可能不属于本项目）
 - [ ] 拍卖雷达是否只服务闲鱼，淘宝/京东拍卖是否只保留 backlog
 

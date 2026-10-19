@@ -381,12 +381,12 @@ class PlaywrightSliderService:
                 logger.info(f"【{self.pure_user_id}】使用 Chromium 可执行文件: {executable_path}")
             prefer_system_chrome = (
                 add_stealth_script
-                and sys.platform == 'win32'
+                and sys.platform in ('win32', 'darwin')
                 and not executable_path
                 and not self._cdp_touch_enabled
             )
             if prefer_system_chrome:
-                # Windows 滑块优先使用系统 Chrome；无头时仍不会创建可见窗口。
+                # Windows/macOS 滑块优先使用系统 Chrome；无头时仍不会创建可见窗口。
                 # Linux 容器和打包内置 Chromium 继续走原执行文件。
                 launch_kwargs['channel'] = 'chrome'
                 logger.info(f"【{self.pure_user_id}】Playwright 滑块优先使用系统 Chrome")

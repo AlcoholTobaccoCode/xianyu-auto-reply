@@ -194,3 +194,25 @@ CERTIFICATE_VERIFY_FAILED: self-signed certificate in certificate chain
 1. 确认 `.venv` 里已安装 `truststore`（`pip show truststore`）。
 2. 确认本地代理/安全软件的 CA 已加入系统钥匙串并被信任。
 3. 重启 `backend-web` 后重试扫码登录。
+
+### IM 连接 / 滑块提示 `Executable doesn't exist`
+
+典型日志：
+
+```text
+BrowserType.launch_persistent_context: Executable doesn't exist
+at .../ms-playwright/chromium-1248/...
+```
+
+原因：Playwright/Patchright 当前版本要求的 Chromium 没有安装，IM Token 又触发了滑块，导致“过滑块失败 → 获取IM Token失败 → IM连接失败”。
+
+处理：
+
+- macOS / Windows 已支持在缺少内置 Chromium 时优先使用**系统 Chrome**；确认电脑装了 Chrome 即可。
+- 也可以安装内置浏览器：
+  ```bash
+  .venv/bin/python -m playwright install chromium
+  .venv/bin/python -m patchright install chromium
+  ```
+- 本次已用系统 Chrome 过滑块成功，IM 连接和 Token 缓存均正常。
+- 如果系统 Chrome 也没有，先安装 Chrome，或在有网络的机器上下载对应 Chromium 后放到 `~/Library/Caches/ms-playwright/`。
