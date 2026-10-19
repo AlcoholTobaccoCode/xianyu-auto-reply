@@ -1,0 +1,73 @@
+# 本地开发基础设施：MySQL 8.0 + Redis 7
+#
+# 只起数据库，不起应用服务。应用服务用源码方式跑，方便断点调试。
+#
+# 启动：docker compose -f docker-compose.dev.yml up -d
+# 状态：docker compose -f docker-compose.dev.yml ps
+# 停止：docker compose -f docker-compose.dev.yml down
+# 清库：docker compose -f docker-compose.dev.yml down -v
+#
+# 默认端口 MySQL 3307 / Redis 6380，避免和本机已有的 3306/6379 冲突。
+# 如果改端口，记得同时改 backend-web/.env.dev、websocket/.env.dev、scheduler/.env.dev。
+name: xianyu-dev
+
+services:
+  mysql:
+    image: ${DEV_MYSQL_IMAGE:-registry.cn-shanghai.aliyuncs.com/zhinian-software/xianyu-mysql:8.0}
+    container_name: xianyu-dev-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DEV_MYSQL_ROOT_PASSWORD:-root_dev_2026}
+      MYSQL_DATABASE: ${DEV_MYSQL_DATABASE:-xianyu_data}
+      MYSQL_USER: ${DEV_MYSQL_USER:-xianyu}
+      MYSQL_PASSWORD: ${DEV_MYSQL_PASSWORD:-xianyu_dev_2026}
+      TZ: Asia/Shanghai
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --max-connections=2500
+      - --max-connect-errors=100000
+      - --max-allowed-packet=256M
+      - --default-time-zone=+08:00
+    ports:
+      - "127.0.0.1:${DEV_MYSQL_PORT:-3307}:3306"
+    volumes:
+      - xianyu_dev_mysql:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p$$MYSQL_ROOT_PASSWORD --silent"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+
+  redis:
+    image: ${DEV_REDIS_IMAGE:-redis:7-alpine}
+    container_name: xianyu-dev-redis
+    restart: unless-stopped
+    command:
+      - redis-server
+      - --requirepass
+      - ${DEV_REDIS_PASSWORD:-redis_dev_2026}
+      - --appendonly
+      - "yes"
+      - --maxmemory
+      - "256mb"
+      - --maxmemory-policy
+      - allkeys-lru
+    environment:
+      REDIS_PASSWORD: ${DEV_REDIS_PASSWORD:-redis_dev_2026}
+      TZ: Asia/Shanghai
+    ports:
+      - "127.0.0.1:${DEV_REDIS_PORT:-6380}:6379"
+    volumes:
+      - xianyu_dev_redis:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$$REDIS_PASSWORD\" ping | grep -q PONG"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 5s
+
+volumes:
+  xianyu_dev_mysql:
+  xianyu_dev_redis:
