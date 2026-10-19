@@ -126,6 +126,31 @@ async def get_auction_item(
     return ApiResponse(success=True, data=item)
 
 
+@router.get("/items/{item_pk}/references", response_model=ApiResponse)
+async def auction_reference_prices(
+    item_pk: int,
+    keyword: str | None = Query(default=None, max_length=80, description="自定义同款搜索词"),
+    refresh: bool = Query(default=False, description="跳过 30 分钟缓存，强制重新搜索"),
+    current_user: User = Depends(deps.get_current_active_user),
+    service: AuctionService = Depends(get_auction_service),
+) -> ApiResponse:
+    """查询同款普通在售商品，作为拍卖出价的参考价。"""
+    try:
+        data = await service.get_reference_prices(
+            current_user.id,
+            item_pk,
+            keyword=keyword,
+            refresh=refresh,
+        )
+    except ValueError as exc:
+        return ApiResponse(success=False, code=40002, message=str(exc), data=None)
+    except Exception as exc:  # noqa: BLE001
+        return ApiResponse(success=False, code=500, message=f"参考价查询失败: {exc}", data=None)
+
+    count = (data.get("stats") or {}).get("count", 0)
+    return ApiResponse(success=True, message=f"找到 {count} 条同款在售", data=data)
+
+
 @router.post("/items/{item_pk}/refresh", response_model=ApiResponse)
 async def refresh_auction_item(
     item_pk: int,

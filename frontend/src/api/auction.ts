@@ -106,6 +106,42 @@ export interface AuctionDiscoverResult {
   duration_ms: number
 }
 
+export interface AuctionReferenceItem {
+  item_id: string
+  title: string
+  price: number
+  area: string
+  seller_nick: string
+  pic_url: string
+  detail_url: string
+  publish_time_ms: string | null
+  tags: string
+}
+
+export interface AuctionReferenceStats {
+  count: number
+  min: number | null
+  max: number | null
+  median: number | null
+  avg: number | null
+}
+
+export interface AuctionReferenceData {
+  item_id: string
+  keyword: string
+  items: AuctionReferenceItem[]
+  stats: AuctionReferenceStats
+  scanned: number
+  auction_skipped: number
+  cached: boolean
+  fetched_at: string
+}
+
+export interface AuctionReferenceParams {
+  keyword?: string
+  refresh?: boolean
+}
+
 /** 通过短链/商品链接/商品ID导入拍卖商品 */
 export async function importAuction(url: string): Promise<AuctionApiResponse<AuctionItem>> {
   return post<AuctionApiResponse<AuctionItem>>(`${PREFIX}/import`, { url })
@@ -139,4 +175,12 @@ export async function deleteAuctionItem(itemPk: number): Promise<AuctionApiRespo
 /** 拍卖雷达统计 */
 export async function getAuctionStats(): Promise<AuctionApiResponse<AuctionStats>> {
   return get<AuctionApiResponse<AuctionStats>>(`${PREFIX}/stats`)
+}
+
+/** 同款普通在售商品参考价 */
+export async function getAuctionReferencePrices(
+  itemPk: number,
+  params: AuctionReferenceParams = {},
+): Promise<AuctionApiResponse<AuctionReferenceData>> {
+  return get<AuctionApiResponse<AuctionReferenceData>>(`${PREFIX}/items/${itemPk}/references`, { params })
 }

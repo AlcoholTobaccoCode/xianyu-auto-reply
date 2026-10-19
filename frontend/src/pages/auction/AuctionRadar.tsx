@@ -12,6 +12,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import {
   AlertTriangle,
+  BarChart3,
   Clock,
   ExternalLink,
   Eye,
@@ -33,6 +34,7 @@ import {
   refreshAuctionItem,
 } from '@/api/auction'
 import type { AuctionItem, AuctionStats } from '@/api/auction'
+import { ReferencePriceModal } from '@/components/auction/ReferencePriceModal'
 import { useUIStore } from '@/store/uiStore'
 
 const PAGE_SIZE = 20
@@ -122,6 +124,7 @@ export function AuctionRadar() {
   const [detail, setDetail] = useState<AuctionItem | null>(null)
   const [detailLoading, setDetailLoading] = useState(false)
   const [refreshingId, setRefreshingId] = useState<number | null>(null)
+  const [referenceItem, setReferenceItem] = useState<AuctionItem | null>(null)
   const [discoverKeywords, setDiscoverKeywords] = useState('手办 1元起拍\n相机 1元起拍\n耳机 拍卖\nMac 拍卖')
   const [discoverPages, setDiscoverPages] = useState(1)
   const [discovering, setDiscovering] = useState(false)
@@ -556,6 +559,13 @@ export function AuctionRadar() {
                     <div className="flex items-center justify-end gap-1">
                       <button
                         className="btn-ios-ghost px-2 py-1 text-xs"
+                        onClick={() => setReferenceItem(item)}
+                        title="同款在售"
+                      >
+                        <BarChart3 className="w-4 h-4" />
+                      </button>
+                      <button
+                        className="btn-ios-ghost px-2 py-1 text-xs"
                         onClick={() => void openDetail(item.id)}
                         disabled={detailLoading}
                         title="详情"
@@ -752,6 +762,10 @@ export function AuctionRadar() {
                     保证金页
                   </a>
                 )}
+                <button className="btn-ios-secondary" onClick={() => setReferenceItem(detail)}>
+                  <BarChart3 className="w-4 h-4" />
+                  同款在售
+                </button>
                 <button className="btn-ios-secondary" onClick={() => void handleRefresh(detail.id)} disabled={refreshingId === detail.id}>
                   <RefreshCw className={`w-4 h-4 ${refreshingId === detail.id ? 'animate-spin' : ''}`} />
                   刷新
@@ -761,6 +775,8 @@ export function AuctionRadar() {
           </div>
         </div>
       )}
+
+      <ReferencePriceModal item={referenceItem} onClose={() => setReferenceItem(null)} />
     </div>
   )
 }

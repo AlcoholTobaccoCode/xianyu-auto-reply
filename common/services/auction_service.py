@@ -15,6 +15,7 @@ from __future__ import annotations
 import asyncio
 import random
 import re
+import statistics
 import time
 from datetime import datetime, timedelta
 from decimal import Decimal
@@ -27,7 +28,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from common.models.auction_item import AuctionItem
 from common.models.xy_account import XYAccount
 from common.services.xianyu_auction_client import fetch_auction
-from common.services.xianyu_search_client import XianyuSearchClient, parse_search_auction
+from common.services.xianyu_search_client import (
+    XianyuSearchClient,
+    parse_search_auction,
+    parse_search_item,
+)
 from common.utils.time_utils import get_beijing_now_naive
 
 
@@ -37,6 +42,10 @@ class AuctionService:
     # 搜索风控冷却：按账号记录，避免连续嗅探把账号打到 FAIL_SYS_USER_VALIDATE
     _last_discover_at: Dict[str, float] = {}
     _captcha_until: Dict[str, float] = {}
+    # 同款在售参考价缓存：key=(owner_id, item_pk, keyword)，30 分钟有效
+    REFERENCE_CACHE_TTL = 1800
+    _reference_cache: Dict[tuple, tuple[float, Dict[str, Any]]] = {}
+    _last_reference_at: Dict[str, float] = {}
 
     def __init__(self, session: AsyncSession):
         self.session = session
@@ -302,6 +311,194 @@ class AuctionService:
             item.is_deleted = False
 
         return created, updated
+
+    # ------------------------------------------------------------------
+    # 同款普通商品参考价
+    # ------------------------------------------------------------------
+    async def get_reference_prices(
+        self,
+        owner_id: int,
+        item_pk: int,
+        *,
+        keyword: Optional[str] = None,
+        refresh: bool = False,
+    ) -> Dict[str, Any]:
+        """搜索同一款商品的普通在售链接，给拍卖出价做参考。
+
+        - 只返回普通商品，拍卖商品会被排除
+        - 结果按价格升序，附最低/中位/均价
+        - 同一 (商品, 关键词) 缓存 30 分钟，避免反复搜索触发风控
+        """
+        item = await self.get_model(owner_id, item_pk)
+        if item is None:
+            raise ValueError("拍卖商品不存在")
+
+        searched_keyword = (keyword or "").strip() or self._build_reference_keyword(item)
+        searched_keyword = re.sub(r"\s+", " ", searched_keyword).strip()[:80]
+        if not searched_keyword:
+            raise ValueError("无法从商品标题生成搜索词，请手动输入关键词")
+
+        cache_key = (owner_id, item_pk, searched_keyword)
+        now_mono = time.monotonic()
+        if not refresh:
+            cached = self._reference_cache.get(cache_key)
+            if cached and now_mono - cached[0] < self.REFERENCE_CACHE_TTL:
+                data = dict(cached[1])
+                data["cached"] = True
+                return data
+
+        account = await self._get_discovery_account(owner_id, None)
+        captcha_until = self._captcha_until.get(account.account_id, 0)
+        if captcha_until > now_mono:
+            remaining = max(1, int((captcha_until - now_mono + 59) // 60))
+            raise ValueError(f"该账号搜索触发风控，冷却中，请约 {remaining} 分钟后再试")
+        last_at = self._last_reference_at.get(account.account_id, 0)
+        if last_at and now_mono - last_at < 5:
+            raise ValueError("参考价查询太快，请 5 秒后再试")
+        self._last_reference_at[account.account_id] = now_mono
+
+        client = XianyuSearchClient(
+            account.account_id,
+            account.cookie,
+            owner_id=owner_id,
+            proxy=self._build_proxy_url(account),
+        )
+        result = await client.search(searched_keyword, page_number=1, rows_per_page=30)
+        if not result.get("success"):
+            message = str(result.get("error") or "搜索失败")
+            if result.get("account_invalid") or result.get("punish_url"):
+                self._captcha_until[account.account_id] = time.monotonic() + 1200
+                raise ValueError(
+                    f"闲鱼搜索触发滑块/风控（{message}）。已暂停该账号 20 分钟；"
+                    "IM 连接不受影响。请稍后再试或重新扫码登录。"
+                )
+            raise ValueError(f"参考价搜索失败：{message}")
+
+        raw_items = result.get("items") or []
+        ordinary: List[Dict[str, Any]] = []
+        seen: set[str] = set()
+        auction_skipped = 0
+        for entry in raw_items:
+            if self._is_auction_entry(entry):
+                auction_skipped += 1
+                continue
+            parsed = parse_search_item(entry)
+            if not parsed:
+                continue
+            item_id = str(parsed.get("item_id") or "")
+            if not item_id or item_id == item.item_id or item_id in seen:
+                continue
+            price = self._parse_price(parsed.get("price"))
+            if price is None or price <= 0:
+                continue
+            seen.add(item_id)
+            ordinary.append(
+                {
+                    "item_id": item_id,
+                    "title": parsed.get("title") or "",
+                    "price": price,
+                    "area": parsed.get("area") or "",
+                    "seller_nick": parsed.get("seller_nick") or "",
+                    "pic_url": parsed.get("pic_url") or "",
+                    "detail_url": f"https://www.goofish.com/item?id={item_id}",
+                    "publish_time_ms": parsed.get("publish_time_ms"),
+                    "tags": parsed.get("tags") or "",
+                }
+            )
+
+        ordinary.sort(key=lambda row: row["price"])
+        prices = [row["price"] for row in ordinary]
+        stats = {
+            "count": len(prices),
+            "min": round(min(prices), 2) if prices else None,
+            "max": round(max(prices), 2) if prices else None,
+            "median": round(float(statistics.median(prices)), 2) if prices else None,
+            "avg": round(sum(prices) / len(prices), 2) if prices else None,
+        }
+        fetched_at = get_beijing_now_naive()
+        data: Dict[str, Any] = {
+            "item_id": item.item_id,
+            "keyword": searched_keyword,
+            "items": ordinary,
+            "stats": stats,
+            "scanned": len(raw_items),
+            "auction_skipped": auction_skipped,
+            "cached": False,
+            "fetched_at": fetched_at.isoformat(),
+        }
+
+        if client.cookies_str != account.cookie:
+            account.cookie = client.cookies_str
+            self.session.add(account)
+            await self.session.commit()
+
+        self._reference_cache[cache_key] = (time.monotonic(), data)
+        self._prune_reference_cache()
+        return data
+
+    def _prune_reference_cache(self) -> None:
+        if len(self._reference_cache) <= 200:
+            return
+        now = time.monotonic()
+        expired = [
+            key
+            for key, (ts, _) in self._reference_cache.items()
+            if now - ts > self.REFERENCE_CACHE_TTL
+        ]
+        for key in expired:
+            self._reference_cache.pop(key, None)
+        if len(self._reference_cache) > 200:
+            oldest = sorted(
+                self._reference_cache.items(), key=lambda pair: pair[1][0]
+            )[: len(self._reference_cache) - 200]
+            for key, _ in oldest:
+                self._reference_cache.pop(key, None)
+
+    @staticmethod
+    def _parse_price(value: Any) -> Optional[float]:
+        if value is None:
+            return None
+        if isinstance(value, (int, float)):
+            return float(value)
+        matched = re.search(r"\d+(?:\.\d+)?", str(value).replace(",", ""))
+        return float(matched.group()) if matched else None
+
+    @staticmethod
+    def _is_auction_entry(entry: Dict[str, Any]) -> bool:
+        try:
+            main = (((entry or {}).get("data") or {}).get("item") or {}).get("main") or {}
+            ex_content = main.get("exContent") or {}
+            return bool(ex_content.get("isAuction") or ex_content.get("auctionEndTime"))
+        except Exception:  # noqa: BLE001
+            return False
+
+    @staticmethod
+    def _build_reference_keyword(item: AuctionItem) -> str:
+        """把拍卖标题清成适合搜同款的短关键词。"""
+        text = item.title or ""
+        text = re.sub(r"【[^】]*】", " ", text)
+        text = re.sub(r"\[[^\]]*\]", " ", text)
+        for word in (
+            "一元起拍",
+            "1元起拍",
+            "拍卖",
+            "竞拍",
+            "捡漏",
+            "无底价",
+            "起拍价",
+            "包邮",
+            "全新",
+            "未拆封",
+            "二手",
+        ):
+            text = text.replace(word, " ")
+        text = re.sub(r"[\r\n\t]+", " ", text)
+        text = re.sub(r"\s+", " ", text).strip(" -_|")
+        keyword = text[:36].strip()
+        brand = (item.brand or "").strip()
+        if brand and brand.lower() not in keyword.lower():
+            keyword = f"{brand} {keyword}".strip()
+        return keyword[:50] or (item.title or "")[:36]
 
     async def _upsert(
         self,
