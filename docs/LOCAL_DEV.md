@@ -172,3 +172,7 @@ docker builder prune
 - 匿名详情接口可用，但连续调用会触发 `RGV587` 限流；自动搜索/高频刷新需要登录账号 + 代理池。
 - 8090 被本机 nginx 占用；全量 Docker 启动 websocket 时必须 `WEBSOCKET_PORT=18090`。
 - 6379 被 ottermind 的 Redis 占用；本项目 dev 固定用 6380。
+
+## 9. 相关文档
+
+- 拍卖雷达后续待办：[AUCTION_TODO.md](AUCTION_TODO.md)
