@@ -14,11 +14,13 @@ from __future__ import annotations
 
 import json
 import re
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 from loguru import logger
 
 from common.services.xianyu_mtop import mtop_call
+from common.utils.time_utils import get_beijing_now_naive
 
 SEARCH_API = "mtop.taobao.idlemtopsearch.pc.search"
 SEARCH_VERSION = "1.0"
@@ -103,10 +105,12 @@ class XianyuSearchClient:
 
         res_json = result.get("res")
         if res_json is not None:
-            # 打印搜索接口完整返回结果（便于排查风控/验证等问题）
+            result_count = len(((res_json or {}).get("data", {}) or {}).get("resultList", []) or [])
             logger.info(
-                f"【{self.cookie_id}】搜索接口返回（关键字={keyword}，第{page_number}页）: "
-                f"{json.dumps(res_json, ensure_ascii=False)}"
+                f"【{self.cookie_id}】搜索 {keyword} 第{page_number}页：返回 {result_count} 条"
+            )
+            logger.debug(
+                f"【{self.cookie_id}】搜索接口完整返回：{json.dumps(res_json, ensure_ascii=False)}"
             )
 
         if result.get("success"):
@@ -239,4 +243,121 @@ def parse_search_item(result_entry: dict) -> Optional[Dict[str, Any]]:
     }
 
 
-__all__ = ["XianyuSearchClient", "parse_search_item", "extract_seller_user_id_from_pic"]
+def _to_beijing_datetime(ms: Any) -> Optional[datetime]:
+    """把闲鱼的毫秒时间戳转成北京时间（naive，与项目其它时间字段一致）。"""
+    try:
+        value = int(ms)
+    except (TypeError, ValueError):
+        return None
+    if value <= 0:
+        return None
+    return datetime.fromtimestamp(value / 1000, tz=timezone.utc).replace(tzinfo=None) + timedelta(hours=8)
+
+
+def _to_float(value: Any) -> Optional[float]:
+    if value is None:
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    text = str(value).replace(",", "").replace("¥", "").strip()
+    matched = re.search(r"\d+(?:\.\d+)?", text)
+    return float(matched.group()) if matched else None
+
+
+def parse_search_auction(result_entry: dict, keyword: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    """从搜索结果中解析一场拍卖。
+
+    拍卖标识在 data.item.main.exContent：
+    - isAuction: bool
+    - auctionStartTime / auctionEndTime: 毫秒时间戳
+
+    非拍卖商品返回 None；结束时间缺失时 status 为 unknown。
+    """
+    try:
+        main = (((result_entry or {}).get("data") or {}).get("item") or {}).get("main") or {}
+        ex_content = main.get("exContent") or {}
+        if not ex_content.get("isAuction"):
+            return None
+        parsed = parse_search_item(result_entry)
+        if not parsed:
+            return None
+        item_id = str(parsed.get("item_id") or "").strip()
+        if not item_id:
+            return None
+
+        args = ((main.get("clickParam") or {}).get("args")) or {}
+        start_at = _to_beijing_datetime(ex_content.get("auctionStartTime"))
+        end_at = _to_beijing_datetime(ex_content.get("auctionEndTime"))
+        now = get_beijing_now_naive()
+        if end_at is None:
+            status = "unknown"
+        elif end_at > now:
+            status = "online"
+        else:
+            status = "ended"
+
+        pic_url = parsed.get("pic_url")
+        tags = str(parsed.get("tags") or "")
+        is_free_shipping = "包邮" in tags or "freeship" in str(args.get("tag") or "").lower()
+        warnings = [
+            "搜索嗅探结果：未获取起拍价/出价次数/保证金/加价幅度",
+            "描述和多图为搜索结果缺失，可点刷新补全",
+        ]
+        if end_at is None:
+            warnings.insert(0, "搜索嗅探未返回结束时间")
+
+        return {
+            "item_id": item_id,
+            "auction_id": None,
+            "title": parsed.get("title") or "",
+            "description": "",
+            "current_price": _to_float(parsed.get("price")),
+            "start_price": None,
+            "original_price": None,
+            "shipping_fee": None,
+            "is_free_shipping": is_free_shipping,
+            "seller_id": parsed.get("seller_id"),
+            "seller_nick": parsed.get("seller_nick"),
+            "seller_city": parsed.get("area"),
+            "seller_good_rate": None,
+            "seller_item_count": None,
+            "category_id": str(args.get("catId") or "") or None,
+            "category_name": None,
+            "condition": None,
+            "brand": None,
+            "images": [pic_url] if pic_url else [],
+            "detail_url": f"https://www.goofish.com/item?id={item_id}",
+            "auction_deposit_url": None,
+            "start_at": start_at,
+            "end_at": end_at,
+            "status": status,
+            "item_status_str": None,
+            "bid_count": None,
+            "deposit_amount": None,
+            "increment_amount": None,
+            "warnings": warnings,
+            "raw": {
+                "source": "search",
+                "keyword": keyword,
+                "is_auction": True,
+                "auction_start_time": ex_content.get("auctionStartTime"),
+                "auction_end_time": ex_content.get("auctionEndTime"),
+                "detail_page_type": ex_content.get("detailPageType"),
+                "search_args": {
+                    key: args.get(key)
+                    for key in ("item_id", "price", "seller_id", "catId", "tag", "publishTime")
+                },
+            },
+            "fetched_at": now,
+        }
+    except Exception as exc:  # noqa: BLE001
+        logger.debug(f"解析搜索拍卖结果失败: {exc}")
+        return None
+
+
+__all__ = [
+    "XianyuSearchClient",
+    "parse_search_item",
+    "parse_search_auction",
+    "extract_seller_user_id_from_pic",
+]

@@ -3,8 +3,9 @@
  *
  * 功能：
  * 1. 链接/商品ID导入
- * 2. 分页列表、详情、刷新、删除
- * 3. 基础统计
+ * 2. 关键词搜索嗅探
+ * 3. 分页列表、详情、刷新、删除
+ * 4. 基础统计
  */
 import { del, get, post } from '@/utils/request'
 
@@ -83,9 +84,35 @@ export interface AuctionListParams {
   page_size?: number
 }
 
+export interface AuctionDiscoverParams {
+  keywords: string[]
+  pages?: number
+  account_id?: string
+  only_active?: boolean
+}
+
+export interface AuctionDiscoverResult {
+  account_id: string
+  keywords: string[]
+  pages: number
+  scanned: number
+  auction_count: number
+  active_count: number
+  created: number
+  updated: number
+  skipped: number
+  errors: string[]
+  duration_ms: number
+}
+
 /** 通过短链/商品链接/商品ID导入拍卖商品 */
 export async function importAuction(url: string): Promise<AuctionApiResponse<AuctionItem>> {
   return post<AuctionApiResponse<AuctionItem>>(`${PREFIX}/import`, { url })
+}
+
+/** 用已登录闲鱼账号按关键词搜索拍卖并自动入库 */
+export async function discoverAuction(params: AuctionDiscoverParams): Promise<AuctionApiResponse<AuctionDiscoverResult>> {
+  return post<AuctionApiResponse<AuctionDiscoverResult>>(`${PREFIX}/discover`, params)
 }
 
 /** 分页查询拍卖商品 */

@@ -20,6 +20,15 @@ class AuctionImportRequest(BaseModel):
     url: str = Field(..., min_length=1, max_length=2000, description="闲鱼短链、商品链接或商品ID")
 
 
+class AuctionDiscoverRequest(BaseModel):
+    """关键词搜索嗅探请求"""
+
+    keywords: list[str] = Field(..., min_length=1, max_length=8, description="关键词列表")
+    account_id: str | None = Field(default=None, max_length=80, description="指定闲鱼账号；不传则用第一个可用账号")
+    pages: int = Field(default=1, ge=1, le=2, description="每个关键词搜索页数")
+    only_active: bool = Field(default=True, description="只入库进行中的拍卖")
+
+
 def get_auction_service(
     session: AsyncSession = Depends(deps.get_db_session),
 ) -> AuctionService:
@@ -42,6 +51,35 @@ async def import_auction(
     except Exception as exc:  # noqa: BLE001
         return ApiResponse(success=False, code=500, message=f"导入失败: {exc}", data=None)
     return ApiResponse(success=True, message="导入成功", data=data)
+
+
+@router.post("/discover", response_model=ApiResponse)
+async def discover_auctions(
+    payload: AuctionDiscoverRequest,
+    current_user: User = Depends(deps.get_current_active_user),
+    service: AuctionService = Depends(get_auction_service),
+) -> ApiResponse:
+    """用已登录闲鱼账号按关键词搜索拍卖，自动入库。"""
+    try:
+        data = await service.discover(
+            current_user.id,
+            payload.keywords,
+            account_id=payload.account_id,
+            pages=payload.pages,
+            only_active=payload.only_active,
+        )
+    except ValueError as exc:
+        return ApiResponse(success=False, code=40002, message=str(exc), data=None)
+    except Exception as exc:  # noqa: BLE001
+        return ApiResponse(success=False, code=500, message=f"嗅探失败: {exc}", data=None)
+
+    message = (
+        f"扫描 {data['scanned']} 条，发现 {data['auction_count']} 场拍卖，"
+        f"新增 {data['created']}，更新 {data['updated']}"
+    )
+    if data.get("errors"):
+        message += f"；{len(data['errors'])} 个关键词失败"
+    return ApiResponse(success=True, message=message, data=data)
 
 
 @router.get("/items", response_model=ApiResponse)

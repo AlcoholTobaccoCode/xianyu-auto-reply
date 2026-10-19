@@ -17,6 +17,7 @@ import {
   Eye,
   Package,
   Plus,
+  Radar,
   RefreshCw,
   Search,
   Trash2,
@@ -24,6 +25,7 @@ import {
 } from 'lucide-react'
 import {
   deleteAuctionItem,
+  discoverAuction,
   getAuctionItem,
   getAuctionStats,
   importAuction,
@@ -109,6 +111,9 @@ export function AuctionRadar() {
   const [detail, setDetail] = useState<AuctionItem | null>(null)
   const [detailLoading, setDetailLoading] = useState(false)
   const [refreshingId, setRefreshingId] = useState<number | null>(null)
+  const [discoverKeywords, setDiscoverKeywords] = useState('手办 拍卖\n相机 拍卖\n1元起拍')
+  const [discoverPages, setDiscoverPages] = useState(1)
+  const [discovering, setDiscovering] = useState(false)
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE))
 
@@ -183,6 +188,47 @@ export function AuctionRadar() {
     }
   }
 
+  const handleDiscover = async () => {
+    const keywords = discoverKeywords
+      .split(/[\n,，;；]+/)
+      .map((value) => value.trim())
+      .filter(Boolean)
+    if (!keywords.length) {
+      addToast({ type: 'warning', message: '请至少输入一个关键词' })
+      return
+    }
+    if (keywords.length > 8) {
+      addToast({ type: 'warning', message: '一次最多 8 个关键词' })
+      return
+    }
+    setDiscovering(true)
+    try {
+      const result = await discoverAuction({ keywords, pages: discoverPages })
+      if (!result.success || !result.data) {
+        throw new Error(result.message || '嗅探失败')
+      }
+      const data = result.data
+      const summary = `扫描 ${data.scanned} 条，发现 ${data.auction_count} 场拍卖，新增 ${data.created}，更新 ${data.updated}`
+      if (data.created + data.updated > 0) {
+        addToast({ type: 'success', message: summary })
+      } else {
+        addToast({ type: 'warning', message: `${summary}。换个关键词试试` })
+      }
+      if (data.errors?.length) {
+        addToast({ type: 'warning', message: `部分关键词失败：${data.errors[0]}` })
+      }
+      if (page === 1) {
+        await loadData()
+      } else {
+        setPage(1)
+      }
+    } catch (error) {
+      addToast({ type: 'error', message: error instanceof Error ? error.message : '嗅探失败' })
+    } finally {
+      setDiscovering(false)
+    }
+  }
+
   const openDetail = async (itemPk: number) => {
     setDetailLoading(true)
     try {
@@ -238,7 +284,7 @@ export function AuctionRadar() {
         <div>
           <h1 className="page-title">拍卖雷达</h1>
           <p className="page-description">
-            导入闲鱼拍卖链接，集中查看当前价、卖家、成色和结束时间；出价仍在闲鱼 App 人工完成。
+            导入闲鱼拍卖链接，或按关键词自主嗅探；集中查看当前价、卖家和结束时间。出价仍在闲鱼 App 人工完成。
           </p>
         </div>
         <button className="btn-ios-secondary" onClick={() => void loadData()} disabled={loading}>
@@ -270,6 +316,47 @@ export function AuctionRadar() {
           <p className="text-xs text-slate-400 dark:text-slate-500">
             公开详情能拿到标题、当前价、起拍价、卖家、成色、图片；出价次数/保证金/加价幅度需到闲鱼 App 查看。
           </p>
+        </div>
+      </div>
+
+      <div className="vben-card">
+        <div className="vben-card-header flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+          <div>
+            <h2 className="vben-card-title">自主嗅探</h2>
+            <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">
+              用已登录的闲鱼账号按关键词搜索拍卖，自动入库；建议使用“拍卖/起拍”类关键词。
+            </p>
+          </div>
+          <button
+            className="btn-ios-primary whitespace-nowrap"
+            onClick={() => void handleDiscover()}
+            disabled={discovering}
+          >
+            <Radar className={`w-4 h-4 ${discovering ? 'animate-spin' : ''}`} />
+            {discovering ? '嗅探中…' : '开始嗅探'}
+          </button>
+        </div>
+        <div className="vben-card-body grid grid-cols-1 lg:grid-cols-[1fr_190px] gap-3">
+          <textarea
+            className="input-ios min-h-[86px] py-2"
+            placeholder="每行一个关键词，例如：手办 拍卖、相机 拍卖、1元起拍"
+            value={discoverKeywords}
+            onChange={(event) => setDiscoverKeywords(event.target.value)}
+          />
+          <div className="space-y-2">
+            <label className="text-xs text-slate-500 dark:text-slate-400">每个关键词搜索页数</label>
+            <select
+              className="input-ios"
+              value={discoverPages}
+              onChange={(event) => setDiscoverPages(Number(event.target.value))}
+            >
+              <option value={1}>1 页（30 条）</option>
+              <option value={2}>2 页（60 条）</option>
+            </select>
+            <p className="text-[11px] text-slate-400 leading-relaxed">
+              最多 8 个关键词 × 2 页；默认使用第一个已登录账号，每页间隔约 1 秒。
+            </p>
+          </div>
         </div>
       </div>
 

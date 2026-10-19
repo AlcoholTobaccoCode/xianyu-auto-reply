@@ -12,15 +12,20 @@
 """
 from __future__ import annotations
 
+import asyncio
+import re
 from datetime import datetime, timedelta
 from decimal import Decimal
 from typing import Any, Dict, List, Optional
+from urllib.parse import quote
 
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from common.models.auction_item import AuctionItem
+from common.models.xy_account import XYAccount
 from common.services.xianyu_auction_client import fetch_auction
+from common.services.xianyu_search_client import XianyuSearchClient, parse_search_auction
 from common.utils.time_utils import get_beijing_now_naive
 
 
@@ -49,6 +54,229 @@ class AuctionService:
             owner_id, parsed, source=item.source or "url", source_account_id=item.source_account_id
         )
         return self.serialize(item, include_raw=True)
+
+    # ------------------------------------------------------------------
+    # 关键词搜索嗅探
+    # ------------------------------------------------------------------
+    async def discover(
+        self,
+        owner_id: int,
+        keywords: List[str] | str,
+        *,
+        account_id: Optional[str] = None,
+        pages: int = 1,
+        only_active: bool = True,
+    ) -> Dict[str, Any]:
+        """用已登录闲鱼账号按关键词搜索拍卖并入库。
+
+        - 只调用搜索接口，不逐条拉详情，避免高频触发 RGV587
+        - 默认只保留 end_at > now 的进行中拍卖；同一商品去重
+        """
+        started = datetime.now()
+        cleaned: List[str] = []
+        raw_keywords = [keywords] if isinstance(keywords, str) else list(keywords or [])
+        for value in raw_keywords:
+            for part in re.split(r"[\n\r,，;；]+", str(value or "")):
+                keyword = part.strip()
+                if keyword and keyword not in cleaned:
+                    cleaned.append(keyword)
+        if not cleaned:
+            raise ValueError("请至少输入一个关键词")
+        if len(cleaned) > 8:
+            raise ValueError("一次最多 8 个关键词")
+        try:
+            pages = max(1, min(int(pages or 1), 2))
+        except (TypeError, ValueError):
+            pages = 1
+        if len(cleaned) * pages > 12:
+            raise ValueError("关键词×页数最多 12 次搜索，请减少关键词或页数")
+
+        account = await self._get_discovery_account(owner_id, account_id)
+        client = XianyuSearchClient(
+            account.account_id,
+            account.cookie,
+            owner_id=owner_id,
+            proxy=self._build_proxy_url(account),
+        )
+
+        scanned = auction_count = active_count = skipped = 0
+        errors: List[str] = []
+        parsed_by_id: Dict[str, Dict[str, Any]] = {}
+
+        for keyword in cleaned:
+            for page in range(1, pages + 1):
+                try:
+                    result = await client.search(keyword, page_number=page, rows_per_page=30)
+                except Exception as exc:  # noqa: BLE001
+                    errors.append(f"{keyword} 第{page}页：{exc}")
+                    continue
+
+                if not result.get("success"):
+                    message = str(result.get("error") or "搜索失败")
+                    if result.get("account_invalid") or result.get("punish_url"):
+                        raise ValueError(f"闲鱼账号登录态失效或触发风控：{message}")
+                    errors.append(f"{keyword} 第{page}页：{message}")
+                    continue
+
+                items = result.get("items") or []
+                scanned += len(items)
+                for entry in items:
+                    parsed = parse_search_auction(entry, keyword=keyword)
+                    if parsed is None:
+                        continue
+                    auction_count += 1
+                    if parsed.get("status") == "online":
+                        active_count += 1
+                    if only_active and parsed.get("status") != "online":
+                        skipped += 1
+                        continue
+                    parsed_by_id[parsed["item_id"]] = parsed
+
+                await asyncio.sleep(1.0)
+
+        created, updated = await self._upsert_search_items(
+            owner_id, list(parsed_by_id.values()), account.account_id
+        )
+        if client.cookies_str != account.cookie:
+            account.cookie = client.cookies_str
+            self.session.add(account)
+        await self.session.commit()
+
+        if scanned == 0 and errors:
+            raise ValueError("搜索失败：" + "；".join(errors[:3]))
+
+        return {
+            "account_id": account.account_id,
+            "keywords": cleaned,
+            "pages": pages,
+            "scanned": scanned,
+            "auction_count": auction_count,
+            "active_count": active_count,
+            "created": created,
+            "updated": updated,
+            "skipped": skipped,
+            "errors": errors[:5],
+            "duration_ms": int((datetime.now() - started).total_seconds() * 1000),
+        }
+
+    async def _get_discovery_account(self, owner_id: int, account_id: Optional[str]) -> XYAccount:
+        conditions = [
+            XYAccount.owner_id == owner_id,
+            XYAccount.status == "active",
+            XYAccount.cookie.is_not(None),
+            XYAccount.cookie != "",
+        ]
+        if account_id:
+            conditions.append(XYAccount.account_id == str(account_id).strip())
+        stmt = select(XYAccount).where(*conditions).order_by(XYAccount.id.asc())
+        account = (await self.session.execute(stmt)).scalars().first()
+        if account is None:
+            if account_id:
+                raise ValueError(f"账号 {account_id} 不存在、未登录或已失效")
+            raise ValueError("请先在账号管理中添加并扫码登录一个闲鱼账号")
+        return account
+
+    def _build_proxy_url(self, account: XYAccount) -> Optional[str]:
+        proxy_type = (account.proxy_type or "none").strip().lower()
+        if proxy_type in ("", "none") or not account.proxy_host:
+            return None
+        scheme = proxy_type if "://" in proxy_type else f"{proxy_type}://"
+        auth = ""
+        if account.proxy_user:
+            auth = f"{quote(account.proxy_user, safe='')}:{quote(account.proxy_pass or '', safe='')}@"
+        port = f":{account.proxy_port}" if account.proxy_port else ""
+        return f"{scheme}{auth}{account.proxy_host}{port}"
+
+    async def _upsert_search_items(
+        self,
+        owner_id: int,
+        parsed_items: List[Dict[str, Any]],
+        account_id: str,
+    ) -> tuple[int, int]:
+        """搜索结果的增量入库：只刷新搜索能拿到的字段，不覆盖详情已有字段。"""
+        if not parsed_items:
+            return 0, 0
+
+        item_ids = list({str(item.get("item_id")) for item in parsed_items if item.get("item_id")})
+        stmt = select(AuctionItem).where(
+            AuctionItem.owner_id == owner_id,
+            AuctionItem.platform == "xianyu",
+            AuctionItem.item_id.in_(item_ids),
+        )
+        existing = {
+            item.item_id: item
+            for item in (await self.session.execute(stmt)).scalars().all()
+        }
+
+        created = updated = 0
+        for parsed in parsed_items:
+            item_id = str(parsed.get("item_id") or "")
+            if not item_id:
+                continue
+            item = existing.get(item_id)
+            if item is not None and item.is_deleted:
+                # 用户主动删除过的记录不自动复活
+                continue
+
+            if item is None:
+                item = AuctionItem(owner_id=owner_id, platform="xianyu", item_id=item_id)
+                self.session.add(item)
+                existing[item_id] = item
+                created += 1
+                item.description = ""
+                item.auction_id = None
+                item.start_price = None
+                item.original_price = None
+                item.shipping_fee = None
+                item.seller_good_rate = None
+                item.seller_item_count = None
+                item.category_name = None
+                item.item_condition = None
+                item.brand = None
+                item.auction_deposit_url = None
+                item.item_status_str = None
+                item.bid_count = None
+                item.deposit_amount = None
+                item.increment_amount = None
+                item.warnings = parsed.get("warnings") or []
+                item.raw_json = parsed.get("raw")
+                item.source = "search"
+                item.source_account_id = account_id
+            else:
+                updated += 1
+                if item.source in (None, "", "search"):
+                    item.source = "search"
+                item.source_account_id = item.source_account_id or account_id
+                if not item.warnings:
+                    item.warnings = parsed.get("warnings") or []
+                if not item.raw_json:
+                    item.raw_json = parsed.get("raw")
+
+            # 搜索能稳定拿到的字段：每次刷新
+            item.title = parsed.get("title") or item.title or ""
+            if parsed.get("current_price") is not None:
+                item.current_price = parsed.get("current_price")
+            item.seller_id = parsed.get("seller_id") or item.seller_id
+            item.seller_nick = parsed.get("seller_nick") or item.seller_nick
+            item.seller_city = parsed.get("seller_city") or item.seller_city
+            item.category_id = parsed.get("category_id") or item.category_id
+            item.is_free_shipping = bool(parsed.get("is_free_shipping")) or bool(item.is_free_shipping)
+            if not item.image_url:
+                images = parsed.get("images") or []
+                item.image_url = images[0] if images else item.image_url
+            if not item.images:
+                item.images = parsed.get("images") or []
+            item.detail_url = parsed.get("detail_url") or item.detail_url
+            item.start_at = parsed.get("start_at") or item.start_at
+            item.end_at = parsed.get("end_at") or item.end_at
+            if parsed.get("end_at") is not None:
+                item.status = parsed.get("status") or item.status
+            elif item.status not in ("online", "ended"):
+                item.status = parsed.get("status") or item.status
+            item.fetched_at = parsed.get("fetched_at") or get_beijing_now_naive()
+            item.is_deleted = False
+
+        return created, updated
 
     async def _upsert(
         self,
