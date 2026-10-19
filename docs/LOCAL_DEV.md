@@ -170,6 +170,7 @@ docker builder prune
 
 - 闲鱼网页端不展示拍卖出价按钮，出价必须在闲鱼 App 人工完成。
 - 匿名详情接口可用，但连续调用会触发 `RGV587` 限流；自动搜索/高频刷新需要登录账号 + 代理池。
+- 搜索风控有两种：滑块（`nc-container`，可回退系统 Chrome 自动过）和刮刮乐（`captchacapslidev2` / `#scratch-captcha-btn`）。刮刮乐当前自动引擎不支持，**等待不会解除**，需要重新扫码登录或换代理/IP。
 - 8090 被本机 nginx 占用；全量 Docker 启动 websocket 时必须 `WEBSOCKET_PORT=18090`。
 - 6379 被 ottermind 的 Redis 占用；本项目 dev 固定用 6380。
 

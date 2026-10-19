@@ -401,7 +401,7 @@ export function AuctionRadar() {
               <option value={2}>2 页（60 条）</option>
             </select>
             <p className="text-[11px] text-slate-400 leading-relaxed">
-              一次 3-6 个词、1 页即可；间隔 10 分钟，触发风控冷却 20 分钟。
+              一次 3-6 个词、1 页即可；间隔 10 分钟。滑块冷却 20 分钟；刮刮乐需重新登录或换 IP。
             </p>
           </div>
           <p className="lg:col-span-2 text-[11px] text-slate-400 leading-relaxed">

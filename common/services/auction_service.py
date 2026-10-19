@@ -143,10 +143,10 @@ class AuctionService:
                 if not result.get("success"):
                     message = str(result.get("error") or "搜索失败")
                     if result.get("account_invalid") or result.get("punish_url"):
-                        self._captcha_until[account.account_id] = time.monotonic() + 1200
-                        raise ValueError(
-                            f"闲鱼搜索触发滑块/风控（{message}）。已暂停该账号 20 分钟；"
-                            "IM 连接不受影响。请减少关键词和页数，稍后再试；若仍失败请重新扫码登录。"
+                        self._raise_search_captcha(
+                            account.account_id,
+                            message,
+                            str(result.get("punish_url") or ""),
                         )
                     errors.append(f"{keyword} 第{page}页：{message}")
                     continue
@@ -367,10 +367,10 @@ class AuctionService:
         if not result.get("success"):
             message = str(result.get("error") or "搜索失败")
             if result.get("account_invalid") or result.get("punish_url"):
-                self._captcha_until[account.account_id] = time.monotonic() + 1200
-                raise ValueError(
-                    f"闲鱼搜索触发滑块/风控（{message}）。已暂停该账号 20 分钟；"
-                    "IM 连接不受影响。请稍后再试或重新扫码登录。"
+                self._raise_search_captcha(
+                    account.account_id,
+                    message,
+                    str(result.get("punish_url") or ""),
                 )
             raise ValueError(f"参考价搜索失败：{message}")
 
@@ -471,6 +471,31 @@ class AuctionService:
             return bool(ex_content.get("isAuction") or ex_content.get("auctionEndTime"))
         except Exception:  # noqa: BLE001
             return False
+
+    @staticmethod
+    def _is_scratch_captcha(punish_url: str) -> bool:
+        text = (punish_url or "").lower()
+        return "captchacapslidev2" in text or "scratch" in text
+
+    def _raise_search_captcha(
+        self,
+        account_id: str,
+        message: str,
+        punish_url: str,
+    ) -> None:
+        """统一处理搜索风控：滑块可等冷却/自动过，刮刮乐等待无效。"""
+        if self._is_scratch_captcha(punish_url):
+            self._captcha_until[account_id] = time.monotonic() + 1800
+            raise ValueError(
+                "闲鱼搜索触发了刮刮乐验证（captchacapslidev2 / FAIL_SYS_USER_VALIDATE）。"
+                "等待不会自动解除；请重新扫码登录，或在账号上配置代理/切换网络后重试。"
+                "已暂停该账号 30 分钟，避免继续触发。"
+            )
+        self._captcha_until[account_id] = time.monotonic() + 1200
+        raise ValueError(
+            f"闲鱼搜索触发滑块/风控（{message}）。已暂停该账号 20 分钟；"
+            "IM 连接不受影响。请减少关键词和页数，稍后再试；若仍失败请重新扫码登录。"
+        )
 
     @staticmethod
     def _build_reference_keyword(item: AuctionItem) -> str:
