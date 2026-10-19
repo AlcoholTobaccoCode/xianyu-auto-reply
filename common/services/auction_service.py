@@ -13,6 +13,7 @@
 from __future__ import annotations
 
 import asyncio
+import random
 import re
 import time
 from datetime import datetime, timedelta
@@ -87,14 +88,14 @@ class AuctionService:
                     cleaned.append(keyword)
         if not cleaned:
             raise ValueError("请至少输入一个关键词")
-        if len(cleaned) > 8:
-            raise ValueError("一次最多 8 个关键词")
+        if len(cleaned) > 6:
+            raise ValueError("一次最多 6 个关键词")
         try:
             pages = max(1, min(int(pages or 1), 2))
         except (TypeError, ValueError):
             pages = 1
-        if len(cleaned) * pages > 12:
-            raise ValueError("关键词×页数最多 12 次搜索，请减少关键词或页数")
+        if len(cleaned) * pages > 6:
+            raise ValueError("一次最多 6 次搜索（关键词×页数），请减少关键词或页数")
 
         account = await self._get_discovery_account(owner_id, account_id)
 
@@ -106,8 +107,8 @@ class AuctionService:
                 f"该账号搜索触发风控，冷却中，请约 {remaining} 分钟后再试；IM 连接不受影响"
             )
         last_at = self._last_discover_at.get(account.account_id, 0)
-        if last_at and now_ts - last_at < 30:
-            raise ValueError("嗅探间隔太短，请 30 秒后再试，避免触发风控")
+        if last_at and now_ts - last_at < 60:
+            raise ValueError("嗅探间隔太短，请 60 秒后再试，避免触发风控")
         self._last_discover_at[account.account_id] = now_ts
 
         client = XianyuSearchClient(
@@ -117,12 +118,13 @@ class AuctionService:
             proxy=self._build_proxy_url(account),
         )
 
-        scanned = auction_count = active_count = skipped = 0
+        scanned = auction_count = active_count = skipped = requests_sent = 0
         errors: List[str] = []
         parsed_by_id: Dict[str, Dict[str, Any]] = {}
 
         for keyword in cleaned:
             for page in range(1, pages + 1):
+                requests_sent += 1
                 try:
                     result = await client.search(keyword, page_number=page, rows_per_page=30)
                 except Exception as exc:  # noqa: BLE001
@@ -132,9 +134,9 @@ class AuctionService:
                 if not result.get("success"):
                     message = str(result.get("error") or "搜索失败")
                     if result.get("account_invalid") or result.get("punish_url"):
-                        self._captcha_until[account.account_id] = time.monotonic() + 600
+                        self._captcha_until[account.account_id] = time.monotonic() + 1200
                         raise ValueError(
-                            f"闲鱼搜索触发滑块/风控（{message}）。已暂停该账号 10 分钟；"
+                            f"闲鱼搜索触发滑块/风控（{message}）。已暂停该账号 20 分钟；"
                             "IM 连接不受影响。请减少关键词和页数，稍后再试；若仍失败请重新扫码登录。"
                         )
                     errors.append(f"{keyword} 第{page}页：{message}")
@@ -154,7 +156,7 @@ class AuctionService:
                         continue
                     parsed_by_id[parsed["item_id"]] = parsed
 
-                await asyncio.sleep(1.0)
+                await asyncio.sleep(2.5 + random.random())
 
         created, updated = await self._upsert_search_items(
             owner_id, list(parsed_by_id.values()), account.account_id
@@ -171,6 +173,7 @@ class AuctionService:
             "account_id": account.account_id,
             "keywords": cleaned,
             "pages": pages,
+            "requests_sent": requests_sent,
             "scanned": scanned,
             "auction_count": auction_count,
             "active_count": active_count,

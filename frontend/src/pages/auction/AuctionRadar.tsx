@@ -127,6 +127,11 @@ export function AuctionRadar() {
   const [discovering, setDiscovering] = useState(false)
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE))
+  const discoverKeywordCount = discoverKeywords
+    .split(/[\n,，;；]+/)
+    .map((item) => item.trim())
+    .filter(Boolean).length
+  const discoverRequestEstimate = discoverKeywordCount * discoverPages
 
   const loadData = useCallback(async () => {
     setLoading(true)
@@ -205,8 +210,8 @@ export function AuctionRadar() {
       .map((item) => item.trim())
       .filter(Boolean)
     if (current.includes(value)) return
-    if (current.length >= 8) {
-      addToast({ type: 'warning', message: '最多 8 个关键词' })
+    if (current.length >= 6) {
+      addToast({ type: 'warning', message: '一次最多 6 个关键词' })
       return
     }
     setDiscoverKeywords([...current, value].join('\n'))
@@ -221,8 +226,8 @@ export function AuctionRadar() {
       addToast({ type: 'warning', message: '请至少输入一个关键词' })
       return
     }
-    if (keywords.length > 8) {
-      addToast({ type: 'warning', message: '一次最多 8 个关键词' })
+    if (keywords.length > 6) {
+      addToast({ type: 'warning', message: '一次最多 6 个关键词' })
       return
     }
     setDiscovering(true)
@@ -232,7 +237,7 @@ export function AuctionRadar() {
         throw new Error(result.message || '嗅探失败')
       }
       const data = result.data
-      const summary = `扫描 ${data.scanned} 条，发现 ${data.auction_count} 场拍卖，新增 ${data.created}，更新 ${data.updated}`
+      const summary = `搜索 ${data.requests_sent} 次，扫描 ${data.scanned} 条，发现 ${data.auction_count} 场拍卖，新增 ${data.created}，更新 ${data.updated}`
       if (data.created + data.updated > 0) {
         addToast({ type: 'success', message: summary })
       } else {
@@ -393,9 +398,13 @@ export function AuctionRadar() {
               <option value={2}>2 页（60 条）</option>
             </select>
             <p className="text-[11px] text-slate-400 leading-relaxed">
-              一次 3-6 个词、1 页即可；间隔 10 分钟，触发风控会冷却 10 分钟。
+              一次 3-6 个词、1 页即可；间隔 10 分钟，触发风控冷却 20 分钟。
             </p>
           </div>
+          <p className="lg:col-span-2 text-[11px] text-slate-400 leading-relaxed">
+            本次约 {discoverRequestEstimate} 次搜索请求（每页 30 条，本地过滤；一次最多 6 次）。
+            不要和“商品监控”同时跑同一账号，避免请求叠加。
+          </p>
         </div>
       </div>
 

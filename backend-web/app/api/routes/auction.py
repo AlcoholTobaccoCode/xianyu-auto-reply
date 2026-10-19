@@ -23,7 +23,7 @@ class AuctionImportRequest(BaseModel):
 class AuctionDiscoverRequest(BaseModel):
     """关键词搜索嗅探请求"""
 
-    keywords: list[str] = Field(..., min_length=1, max_length=8, description="关键词列表")
+    keywords: list[str] = Field(..., min_length=1, max_length=6, description="关键词列表")
     account_id: str | None = Field(default=None, max_length=80, description="指定闲鱼账号；不传则用第一个可用账号")
     pages: int = Field(default=1, ge=1, le=2, description="每个关键词搜索页数")
     only_active: bool = Field(default=True, description="只入库进行中的拍卖")

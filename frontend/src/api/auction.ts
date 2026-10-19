@@ -95,6 +95,7 @@ export interface AuctionDiscoverResult {
   account_id: string
   keywords: string[]
   pages: number
+  requests_sent: number
   scanned: number
   auction_count: number
   active_count: number
