@@ -75,6 +75,7 @@ async def run_face_verification(
             follow_redirects=True,
             timeout=manager.timeout,
             proxy=manager.proxy,
+            verify=getattr(manager, "verify", True),
             cookies=session.cookies,
             headers=manager.headers,
         ) as client:

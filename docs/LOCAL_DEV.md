@@ -176,3 +176,21 @@ docker builder prune
 ## 9. 相关文档
 
 - 拍卖雷达后续待办：[AUCTION_TODO.md](AUCTION_TODO.md)
+
+## 10. 常见问题
+
+### 扫码登录提示“连接错误，请检查网络或代理设置”
+
+先看 `backend-web` 日志里有没有：
+
+```text
+CERTIFICATE_VERIFY_FAILED: self-signed certificate in certificate chain
+```
+
+这是 httpx 默认使用 certifi、不信任本机代理/安全软件注入的自签名 CA 导致的，不是闲鱼账号问题。
+
+项目已通过 `common/utils/http_ssl.py` 使用 `truststore` 读取系统证书链，并在扫码登录的 httpx 客户端上启用。若换机器后仍报错：
+
+1. 确认 `.venv` 里已安装 `truststore`（`pip show truststore`）。
+2. 确认本地代理/安全软件的 CA 已加入系统钥匙串并被信任。
+3. 重启 `backend-web` 后重试扫码登录。
