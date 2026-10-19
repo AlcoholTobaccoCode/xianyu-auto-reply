@@ -11,6 +11,7 @@ from fastapi import APIRouter
 # 导入所有路由模块
 from . import (
     activation,
+    auction,
     admin,
     advertisements,
     ai,
@@ -99,6 +100,9 @@ api_router.include_router(health.router, tags=["健康检查"])  # 已定义pref
 
 # 激活码（公开接口，无需登录）
 api_router.include_router(activation.router, prefix="/activation", tags=["激活码"])
+
+# 拍卖雷达
+api_router.include_router(auction.router, prefix="/auction", tags=["拍卖雷达"])
 
 # 认证相关
 api_router.include_router(auth.router, prefix="/auth", tags=["认证"])

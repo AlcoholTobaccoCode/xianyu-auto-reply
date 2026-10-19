@@ -2006,6 +2006,56 @@ class DatabaseInitializer:
                 INDEX idx_alti_task_status (task_id, status)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='AI铺货任务明细表';
         """,
+
+        # 55. 闲鱼拍卖雷达商品表
+        "xy_auction_items": """
+            CREATE TABLE IF NOT EXISTS xy_auction_items (
+                id BIGINT PRIMARY KEY AUTO_INCREMENT COMMENT '主键ID',
+                owner_id BIGINT NOT NULL COMMENT '归属用户ID',
+                platform VARCHAR(16) NOT NULL DEFAULT 'xianyu' COMMENT '平台：xianyu',
+                item_id VARCHAR(64) NOT NULL COMMENT '闲鱼商品ID',
+                auction_id VARCHAR(64) DEFAULT NULL COMMENT '闲鱼拍卖ID',
+                title TEXT DEFAULT NULL COMMENT '商品标题',
+                description MEDIUMTEXT DEFAULT NULL COMMENT '商品描述',
+                current_price DECIMAL(12,2) DEFAULT NULL COMMENT '当前价',
+                start_price DECIMAL(12,2) DEFAULT NULL COMMENT '起拍价',
+                original_price DECIMAL(12,2) DEFAULT NULL COMMENT '原价',
+                shipping_fee DECIMAL(12,2) DEFAULT NULL COMMENT '运费',
+                is_free_shipping TINYINT(1) NOT NULL DEFAULT 0 COMMENT '是否包邮',
+                seller_id VARCHAR(64) DEFAULT NULL COMMENT '卖家ID',
+                seller_nick VARCHAR(120) DEFAULT NULL COMMENT '卖家昵称',
+                seller_city VARCHAR(120) DEFAULT NULL COMMENT '卖家城市',
+                seller_good_rate VARCHAR(32) DEFAULT NULL COMMENT '卖家好评率',
+                seller_item_count INT DEFAULT NULL COMMENT '卖家在售商品数',
+                category_id VARCHAR(64) DEFAULT NULL COMMENT '类目ID',
+                category_name VARCHAR(120) DEFAULT NULL COMMENT '类目名称',
+                item_condition VARCHAR(64) DEFAULT NULL COMMENT '成色',
+                brand VARCHAR(120) DEFAULT NULL COMMENT '品牌',
+                image_url VARCHAR(1000) DEFAULT NULL COMMENT '主图URL',
+                images JSON DEFAULT NULL COMMENT '图片URL列表',
+                detail_url VARCHAR(1000) DEFAULT NULL COMMENT '商品详情URL',
+                auction_deposit_url VARCHAR(1000) DEFAULT NULL COMMENT '保证金缴纳页URL',
+                start_at DATETIME DEFAULT NULL COMMENT '拍卖开始时间',
+                end_at DATETIME DEFAULT NULL COMMENT '拍卖结束时间',
+                status VARCHAR(32) NOT NULL DEFAULT 'online' COMMENT '状态：online/ended/unknown',
+                item_status_str VARCHAR(32) DEFAULT NULL COMMENT '闲鱼原始状态文本',
+                bid_count INT DEFAULT NULL COMMENT '出价次数（公开详情可能为空）',
+                deposit_amount DECIMAL(12,2) DEFAULT NULL COMMENT '保证金（公开详情可能为空）',
+                increment_amount DECIMAL(12,2) DEFAULT NULL COMMENT '加价幅度（公开详情可能为空）',
+                warnings JSON DEFAULT NULL COMMENT '数据缺口提示',
+                raw_json JSON DEFAULT NULL COMMENT '解析后的原始详情（精简）',
+                fetched_at DATETIME DEFAULT NULL COMMENT '最近抓取时间',
+                source VARCHAR(16) NOT NULL DEFAULT 'url' COMMENT '来源：url-链接导入，search-搜索采集',
+                source_account_id VARCHAR(80) DEFAULT NULL COMMENT '采集使用的账号ID',
+                is_deleted TINYINT(1) NOT NULL DEFAULT 0 COMMENT '是否软删除',
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+                UNIQUE KEY uk_auction_owner_platform_item (owner_id, platform, item_id),
+                INDEX idx_auction_owner_end (owner_id, end_at),
+                INDEX idx_auction_owner_status (owner_id, status),
+                INDEX idx_auction_owner_created (owner_id, created_at)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='闲鱼拍卖雷达商品表';
+        """,
     }
     
     # 字段迁移定义：表名 -> [(字段名, 字段定义, 在哪个字段后面)]

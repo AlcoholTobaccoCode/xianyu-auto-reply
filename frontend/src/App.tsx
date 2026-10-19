@@ -75,6 +75,7 @@ const MonitorLogs = React.lazy(() => import('@/pages/product-monitor/MonitorLogs
 const MonitorItems = React.lazy(() => import('@/pages/product-monitor/MonitorItems').then(m => ({ default: m.MonitorItems })))
 const OrderFallbackAccount = React.lazy(() => import('@/pages/product-monitor/OrderFallbackAccount').then(m => ({ default: m.OrderFallbackAccount })))
 const CollectFallbackAccount = React.lazy(() => import('@/pages/product-monitor/CollectFallbackAccount').then(m => ({ default: m.CollectFallbackAccount })))
+const AuctionRadar = React.lazy(() => import('@/pages/auction/AuctionRadar').then(m => ({ default: m.AuctionRadar })))
 
 // 管理员页面懒加载
 const Users = React.lazy(() => import('@/pages/admin/Users').then(m => ({ default: m.Users })))
@@ -385,6 +386,8 @@ function App() {
             <Route path="product-monitor/items" element={<MonitorItems />} />
             <Route path="product-monitor/order-fallback-accounts" element={<OrderFallbackAccount />} />
             <Route path="product-monitor/collect-fallback-accounts" element={<CollectFallbackAccount />} />
+            {/* 拍卖雷达 */}
+            <Route path="auction-radar" element={<AuctionRadar />} />
             <Route path="personal-settings" element={<PersonalSettings />} />
             <Route path="blacklist" element={<Blacklist />} />
             <Route path="settings" element={<Settings />} />

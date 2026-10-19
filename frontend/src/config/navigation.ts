@@ -130,6 +130,7 @@ export const mainNavItems: NavEntry[] = [
       { key: 'product-monitor-collect-fallback', icon: Users, label: '采集账号', path: '/product-monitor/collect-fallback-accounts' },
     ],
   },
+  { key: 'auction-radar', icon: PackageSearch, label: '拍卖雷达', path: '/auction-radar' },
   { key: 'keywords', icon: MessageSquare, label: '自动回复', path: '/keywords' },
   { key: 'message-logs', icon: ScrollText, label: '消息日志', path: '/message-logs' },
   { key: 'risk-logs', icon: Shield, label: '风控日志', path: '/risk-logs' },
