@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import asyncio
 import re
+import time
 from datetime import datetime, timedelta
 from decimal import Decimal
 from typing import Any, Dict, List, Optional
@@ -31,6 +32,10 @@ from common.utils.time_utils import get_beijing_now_naive
 
 class AuctionService:
     """闲鱼拍卖雷达服务"""
+
+    # 搜索风控冷却：按账号记录，避免连续嗅探把账号打到 FAIL_SYS_USER_VALIDATE
+    _last_discover_at: Dict[str, float] = {}
+    _captcha_until: Dict[str, float] = {}
 
     def __init__(self, session: AsyncSession):
         self.session = session
@@ -92,6 +97,19 @@ class AuctionService:
             raise ValueError("关键词×页数最多 12 次搜索，请减少关键词或页数")
 
         account = await self._get_discovery_account(owner_id, account_id)
+
+        now_ts = time.monotonic()
+        captcha_until = self._captcha_until.get(account.account_id, 0)
+        if captcha_until > now_ts:
+            remaining = max(1, int((captcha_until - now_ts + 59) // 60))
+            raise ValueError(
+                f"该账号搜索触发风控，冷却中，请约 {remaining} 分钟后再试；IM 连接不受影响"
+            )
+        last_at = self._last_discover_at.get(account.account_id, 0)
+        if last_at and now_ts - last_at < 30:
+            raise ValueError("嗅探间隔太短，请 30 秒后再试，避免触发风控")
+        self._last_discover_at[account.account_id] = now_ts
+
         client = XianyuSearchClient(
             account.account_id,
             account.cookie,
@@ -114,7 +132,11 @@ class AuctionService:
                 if not result.get("success"):
                     message = str(result.get("error") or "搜索失败")
                     if result.get("account_invalid") or result.get("punish_url"):
-                        raise ValueError(f"闲鱼账号登录态失效或触发风控：{message}")
+                        self._captcha_until[account.account_id] = time.monotonic() + 600
+                        raise ValueError(
+                            f"闲鱼搜索触发滑块/风控（{message}）。已暂停该账号 10 分钟；"
+                            "IM 连接不受影响。请减少关键词和页数，稍后再试；若仍失败请重新扫码登录。"
+                        )
                     errors.append(f"{keyword} 第{page}页：{message}")
                     continue
 

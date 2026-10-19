@@ -37,6 +37,17 @@ import { useUIStore } from '@/store/uiStore'
 
 const PAGE_SIZE = 20
 
+const DISCOVER_KEYWORD_SUGGESTIONS = [
+  '1元起拍',
+  '一元起拍',
+  '无底价',
+  '拍卖 捡漏',
+  '手办 拍卖',
+  '相机 竞拍',
+  '耳机 拍卖',
+  'Mac 拍卖',
+]
+
 type StatusFilter = '' | 'online' | 'ended'
 
 const statusLabels: Record<string, string> = {
@@ -111,7 +122,7 @@ export function AuctionRadar() {
   const [detail, setDetail] = useState<AuctionItem | null>(null)
   const [detailLoading, setDetailLoading] = useState(false)
   const [refreshingId, setRefreshingId] = useState<number | null>(null)
-  const [discoverKeywords, setDiscoverKeywords] = useState('手办 拍卖\n相机 拍卖\n1元起拍')
+  const [discoverKeywords, setDiscoverKeywords] = useState('手办 1元起拍\n相机 1元起拍\n耳机 拍卖\nMac 拍卖')
   const [discoverPages, setDiscoverPages] = useState(1)
   const [discovering, setDiscovering] = useState(false)
 
@@ -186,6 +197,19 @@ export function AuctionRadar() {
     } finally {
       setImporting(false)
     }
+  }
+
+  const appendDiscoverKeyword = (value: string) => {
+    const current = discoverKeywords
+      .split(/[\n,，;；]+/)
+      .map((item) => item.trim())
+      .filter(Boolean)
+    if (current.includes(value)) return
+    if (current.length >= 8) {
+      addToast({ type: 'warning', message: '最多 8 个关键词' })
+      return
+    }
+    setDiscoverKeywords([...current, value].join('\n'))
   }
 
   const handleDiscover = async () => {
@@ -337,12 +361,27 @@ export function AuctionRadar() {
           </button>
         </div>
         <div className="vben-card-body grid grid-cols-1 lg:grid-cols-[1fr_190px] gap-3">
-          <textarea
-            className="input-ios min-h-[86px] py-2"
-            placeholder="每行一个关键词，例如：手办 拍卖、相机 拍卖、1元起拍"
-            value={discoverKeywords}
-            onChange={(event) => setDiscoverKeywords(event.target.value)}
-          />
+          <div className="space-y-2">
+            <textarea
+              className="input-ios min-h-[86px] py-2"
+              placeholder="每行一个关键词，建议“品类/型号 + 拍卖词”，例如：手办 1元起拍、相机 竞拍、Mac 拍卖"
+              value={discoverKeywords}
+              onChange={(event) => setDiscoverKeywords(event.target.value)}
+            />
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="text-[11px] text-slate-400">推荐词：</span>
+              {DISCOVER_KEYWORD_SUGGESTIONS.map((value) => (
+                <button
+                  key={value}
+                  type="button"
+                  className="px-2 py-0.5 rounded-full border border-slate-200 dark:border-slate-600 text-[11px] text-slate-500 hover:border-blue-400 hover:text-blue-600"
+                  onClick={() => appendDiscoverKeyword(value)}
+                >
+                  {value}
+                </button>
+              ))}
+            </div>
+          </div>
           <div className="space-y-2">
             <label className="text-xs text-slate-500 dark:text-slate-400">每个关键词搜索页数</label>
             <select
@@ -354,7 +393,7 @@ export function AuctionRadar() {
               <option value={2}>2 页（60 条）</option>
             </select>
             <p className="text-[11px] text-slate-400 leading-relaxed">
-              最多 8 个关键词 × 2 页；默认使用第一个已登录账号，每页间隔约 1 秒。
+              一次 3-6 个词、1 页即可；间隔 10 分钟，触发风控会冷却 10 分钟。
             </p>
           </div>
         </div>
